@@ -576,6 +576,6 @@ if convert_btn:
 
 st.markdown("""
 <div class="footer">
-Built with ❤️ using Streamlit by Harsh Pandya• Python • C • Regex Parsing
+Built with ❤️ using Streamlit by Harsh Pandya • Python • C • Regex Parsing
 </div>
 """, unsafe_allow_html=True)
