@@ -1,30 +1,41 @@
-# C to Python Converter
+# ⚡ C to Python Transpiler
 
-A lightweight source-to-source converter that translates a subset of **C programs** into equivalent **Python code** using parsing and syntax transformation techniques.
+A modern source-to-source transpiler that converts a subset of **C programs** into clean and readable **Python code** using parsing, regex-based transformations, and syntax-aware conversion techniques.
 
----
-
-# 📌 Project Overview
-
-This project converts basic C syntax into readable Python code by applying rule-based transformations.
-
-It is designed to help beginners understand the relationship between C and Python syntax while also demonstrating concepts of parsing, tokenization, and code translation.
-
-The converter reads a `.c` file as input and generates a corresponding `.py` file as output.
+The project also includes a fully interactive **Streamlit-based IDE-style web interface** with syntax highlighting, live editing, file uploads, downloads, conversion metrics, and a modern developer experience.
 
 ---
 
-# ✨ Supported Features
+# 🚀 Project Overview
 
-## ✅ Variable Declarations
+The **C to Python Transpiler** is designed to simplify the understanding of programming language translation by automatically converting C syntax into equivalent Python code.
 
-Supports:
+The project demonstrates:
+
+- Compiler design fundamentals
+- Syntax parsing
+- Lexical transformations
+- Rule-based transpilation
+- Source-to-source code conversion
+- UI/UX integration with Streamlit
+
+The application accepts a `.c` source file or raw C code as input and generates an equivalent `.py` file as output.
+
+---
+
+# ✨ Core Features
+
+# ✅ Variable Declaration Conversion
+
+Supports conversion of:
 
 - `int`
 - `float`
 - `double`
 - `char`
 - `bool`
+- `long`
+- `short`
 
 ### Example
 
@@ -46,15 +57,13 @@ p, q = 1, 2
 
 ---
 
-## ✅ Conditional Statements
+# ✅ Conditional Statement Conversion
 
-### Supported
+Supports:
 
 - `if`
 - `else if`
 - `else`
-
-### Example
 
 ### C
 
@@ -85,9 +94,9 @@ else:
 
 ---
 
-## ✅ Loop Conversion
+# ✅ Loop Conversion
 
-### While Loop
+## While Loop
 
 ### C
 
@@ -106,9 +115,7 @@ while i < 5:
 
 ---
 
-### For Loop → While Loop
-
-`for` loops are internally converted into Python `while` loops.
+## For Loop → While Loop
 
 ### C
 
@@ -130,7 +137,7 @@ while i < 10:
 
 ---
 
-### Do-While Loop
+## Do-While Loop
 
 ### C
 
@@ -152,25 +159,7 @@ while True:
 
 ---
 
-## ✅ Increment / Decrement Operators
-
-### C
-
-```c
-i++;
-j--;
-```
-
-### Python
-
-```python
-i += 1
-j -= 1
-```
-
----
-
-## ✅ Functions
+# ✅ Function Conversion
 
 Supports user-defined functions with parameters.
 
@@ -191,16 +180,33 @@ def add(a, b):
 
 ---
 
-## ✅ Input Handling (`scanf`)
+# ✅ Increment & Decrement Operators
 
-### Supported Specifiers
+### C
+
+```c
+i++;
+j--;
+```
+
+### Python
+
+```python
+i += 1
+j -= 1
+```
+
+---
+
+# ✅ Input Handling (`scanf`)
+
+Supports automatic Python input conversion.
 
 | C Specifier | Python Conversion |
 |---|---|
 | `%d` | `int(input())` |
 | `%f` | `float(input())` |
-
-### Example
+| `%s` | `input()` |
 
 ### C
 
@@ -216,9 +222,9 @@ a = int(input())
 x = float(input())
 ```
 
-### Multiple Inputs
+---
 
-If multiple variables are present in a single `scanf`, the converter generates separate input statements.
+## Multiple Inputs
 
 ### C
 
@@ -235,7 +241,7 @@ b = int(input())
 
 ---
 
-## ✅ Output Handling (`printf`)
+# ✅ Output Handling (`printf`)
 
 ### C
 
@@ -249,45 +255,11 @@ printf("Value = %d", a);
 print("Value = {}".format(a))
 ```
 
-### Float Example
-
-### C
-
-```c
-printf("%f", x);
-```
-
-### Python
-
-```python
-print("{}".format(x))
-```
-
 ---
 
 # 🔄 Additional Transformations
 
-## ✅ `#include` Handling
-
-C header files are ignored during conversion.
-
-### C
-
-```c
-#include <stdio.h>
-```
-
-### Python
-
-```python
-# Ignored
-```
-
----
-
-## ✅ `#define` Handling
-
-Macro constants are replaced with equivalent Python assignments.
+# ✅ `#define` Handling
 
 ### C
 
@@ -303,9 +275,9 @@ MAX = 100
 
 ---
 
-## ✅ Comment Conversion
+# ✅ Comment Conversion
 
-### Single-Line Comments
+## Single-Line Comments
 
 ### C
 
@@ -321,7 +293,7 @@ MAX = 100
 
 ---
 
-### Multi-Line Comments
+## Multi-Line Comments
 
 ### C
 
@@ -341,9 +313,9 @@ comment
 
 ---
 
-## ✅ Integer Division Handling
+# ✅ Smart Integer Division
 
-If both numerator and denominator are integers, `/` is converted to `//`.
+If both operands are integers, the transpiler automatically converts `/` into integer division `//`.
 
 ### C
 
@@ -359,86 +331,287 @@ a = b // c
 
 ---
 
-## ✅ Block End Markers
+# ✅ Array & Matrix Initialization
 
-Whenever a `}` is encountered, the converter adds a Python comment to indicate block termination.
+Supports:
 
-### Example
+- 1D arrays
+- 2D arrays
+- Matrix initialization
+
+### C
+
+```c
+int arr[5];
+```
+
+### Python
 
 ```python
-# End of block
+arr = [0 for _ in range(5)]
 ```
 
 ---
 
-# 🧮 Matrix Operations (Experimental)
+### C
 
-The project also attempts basic conversion for:
+```c
+int matrix[3][3];
+```
 
-- Matrix Addition
-- Matrix Multiplication
+### Python
 
-This feature is currently experimental and under improvement.
-
----
-
-# ⚙️ Assumptions
-
-- Input C code is assumed to be **syntactically correct**
-- No semantic error checking is performed
-- Only a subset of C syntax is supported
+```python
+matrix = [[0 for _ in range(3)] for _ in range(3)]
+```
 
 ---
 
-# 📂 Input / Output
+# ✅ Block Tracking
 
-## Input
+Automatically inserts block-ending comments for readability.
 
-- `.c` source file
+### Python
 
-## Output
-
-- Generated `.py` file
+```python
+# end block
+```
 
 ---
 
-# 🚀 Future Improvements
+# 🧠 Smart Parsing Features
 
-- Support for arrays and pointers
-- Better expression parsing
-- Switch-case conversion
-- Struct and class support
-- Nested function handling
-- Advanced matrix operations
-- Error detection and reporting
-- GUI interface for file conversion
+The transpiler includes:
+
+- Regex-based syntax parsing
+- Condition transformation
+- Operator replacement
+- Intelligent indentation handling
+- Block stack tracking
+- Automatic Python formatting
+- Dynamic type stripping
+
+---
+
+# 🎨 Modern Streamlit IDE Interface
+
+The project now includes a completely redesigned developer-style UI.
+
+---
+
+# ✨ UI Features
+
+## ✅ Monaco/VSCode Style Code Editor
+
+Powered by:
+
+- Streamlit-ace
+- Syntax highlighting
+- Auto-indentation
+- Code wrapping
+- Dark theme editor
+
+---
+
+## ✅ Modern Cyberpunk UI
+
+Includes:
+
+- Animated gradient background
+- Glassmorphism panels
+- Interactive buttons
+- Responsive layout
+- Gradient typography
+- Hover animations
+
+---
+
+## ✅ Live File Upload
+
+Supports direct `.c` file upload from the browser.
+
+---
+
+## ✅ Download Generated Python File
+
+Users can instantly download:
+
+```bash
+output.py
+```
+
+---
+
+## ✅ Conversion Metrics Dashboard
+
+Displays:
+
+- Number of C lines
+- Number of Python lines
+- Conversion ratio
+- Estimated accuracy
+- Execution speed
+
+---
+
+## ✅ IDE-Style Layout
+
+The UI includes:
+
+- Split-pane editor
+- Sidebar navigation
+- Feature panels
+- Footer section
+- Syntax-highlighted output
+
+---
+
+# 📂 Project Structure
+
+```bash
+project/
+ ┣ converter.py
+ ┣ app.py
+ ┣ README.md
+ ┣ input.c
+ ┗ output.py
+```
 
 ---
 
 # 🛠️ Technologies Used
 
+## Backend
+
 - Python
-- Regular Expressions
+- Regex Parsing
 - File Handling
-- Parsing Logic
 - String Manipulation
+
+---
+
+## Frontend
+
+- Streamlit
+- streamlit-ace
+- Custom CSS
+- Glassmorphism UI
+- Animated gradients
+
+---
+
+# 📦 Installation
+
+## Clone Repository
+
+```bash
+git clone <repository-url>
+cd project-folder
+```
+
+---
+
+## Create Virtual Environment
+
+### Windows
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+### Linux / Mac
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+---
+
+## Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+# ▶️ Run the Application
+
+```bash
+streamlit run app.py
+```
+
+---
+
+# 📸 Application Features
+
+The application supports:
+
+- Live C code editing
+- Instant Python generation
+- File upload/download
+- Syntax highlighting
+- Responsive IDE interface
+- Interactive metrics
+- Modern developer dashboard
+
+---
+
+# ⚙️ Assumptions
+
+- Input C code is assumed to be syntactically correct
+- The transpiler handles a subset of the C language
+- Semantic analysis is limited
+- Memory management conversion is not included
+
+---
+
+# 🚀 Future Improvements
+
+Planned future upgrades include:
+
+- Pointer support
+- Struct conversion
+- Switch-case conversion
+- Better parser architecture
+- Tokenizer + AST generation
+- Semantic analysis
+- Error reporting system
+- Real-time conversion
+- AI-assisted optimization
+- Multi-language transpilation
+- Docker deployment
+- Authentication system
+- Cloud hosting
 
 ---
 
 # 🎯 Learning Outcomes
 
-This project demonstrates:
+This project demonstrates practical implementation of:
 
-- Compiler design basics
-- Syntax transformation
-- Parsing techniques
-- Language translation concepts
-- Rule-based code conversion
+- Compiler design concepts
+- Parsing strategies
+- Source-to-source transpilation
+- Programming language translation
+- Regex-based syntax conversion
+- UI/UX engineering
+- Interactive IDE development
+- Frontend-backend integration
 
 ---
 
 # 📌 Conclusion
 
-The **C to Python Converter** successfully translates fundamental C constructs into Python syntax while maintaining readability and logical structure.
+The **C to Python Transpiler** successfully converts core C programming constructs into equivalent Python syntax while preserving readability and logical flow.
 
-It serves as both an educational tool and a foundation for more advanced source-code translation systems.
+Combined with its modern Streamlit-powered IDE interface, the project serves as:
+
+- An educational compiler-design project
+- A beginner-friendly transpiler
+- A syntax translation demonstration
+- A modern web-based developer tool
+
+The project provides a strong foundation for future expansion into advanced compiler and transpiler systems.
