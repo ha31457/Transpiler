@@ -579,12 +579,6 @@ Planned future upgrades include:
 - Tokenizer + AST generation
 - Semantic analysis
 - Error reporting system
-- Real-time conversion
-- AI-assisted optimization
-- Multi-language transpilation
-- Docker deployment
-- Authentication system
-- Cloud hosting
 
 ---
 
@@ -597,9 +591,6 @@ This project demonstrates practical implementation of:
 - Source-to-source transpilation
 - Programming language translation
 - Regex-based syntax conversion
-- UI/UX engineering
-- Interactive IDE development
-- Frontend-backend integration
 
 ---
 
@@ -612,6 +603,5 @@ Combined with its modern Streamlit-powered IDE interface, the project serves as:
 - An educational compiler-design project
 - A beginner-friendly transpiler
 - A syntax translation demonstration
-- A modern web-based developer tool
 
 The project provides a strong foundation for future expansion into advanced compiler and transpiler systems.
