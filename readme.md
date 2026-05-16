@@ -605,3 +605,9 @@ Combined with its modern Streamlit-powered IDE interface, the project serves as:
 - A syntax translation demonstration
 
 The project provides a strong foundation for future expansion into advanced compiler and transpiler systems.
+
+## Phase 3
+- convert for looop to for only and not while
+- convert single line comments
+- remove int in variables
+- document the type of statements converted.
