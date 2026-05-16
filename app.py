@@ -2,6 +2,8 @@ import streamlit as st
 from streamlit_ace import st_ace
 import re
 import time
+import sys
+import os
 
 # ─────────────────────────────────────────────────────────────
 # CONVERTER LOGIC
@@ -65,7 +67,12 @@ def convert_scanf(line):
     return '\n'.join(result_lines)
 
 def strip_type(s):
-    return re.sub(r'^(int|float|double|char|bool|long|short|void)\s+\*?', '', s).strip()
+    """Strip C type from a parameter, including array params like int mat[N][N]."""
+    s = s.strip()
+    # Remove array brackets first: int mat[N][N] -> mat
+    s = re.sub(r'^(int|float|double|char|bool|long|short|void)\s+\*?', '', s)
+    s = re.sub(r'\[.*?\]', '', s)
+    return s.strip()
 
 DEFAULTS = {'int':'0','long':'0','short':'0','float':'0.0','double':'0.0','char':"''",'bool':'False'}
 INT_TYPES = {'int','long','short'}
@@ -73,27 +80,20 @@ INT_TYPES = {'int','long','short'}
 def smart_divide(expr, known_int_vars=None):
     if known_int_vars is None:
         known_int_vars = set()
-
     def is_int_expr(e):
         e = e.strip()
-        if re.match(r'^\d+$', e):
-            return True
-        if e in known_int_vars:
-            return True
+        if re.match(r'^\d+$', e): return True
+        if e in known_int_vars: return True
         return False
-
     tokens = re.split(r'(/)', expr)
     result = []
-
     for j, tok in enumerate(tokens):
         if tok == '/' and j > 0 and j < len(tokens)-1:
             lhs_token = re.split(r'[\s\+\-\*\(]', ''.join(result))[-1].strip()
             rhs_token = re.split(r'[\s\+\-\*\)]', tokens[j+1])[0].strip()
-
             result.append('//' if is_int_expr(lhs_token) and is_int_expr(rhs_token) else '/')
         else:
             result.append(tok)
-
     return ''.join(result)
 
 def handle_define(line):
@@ -103,147 +103,278 @@ def handle_define(line):
         return '{} = {}'.format(m.group(1), val)
     return None
 
+def parse_for(line):
+    """
+    Parse a C for loop and return (var, start, end_expr, step_expr, range_str) or None.
+    Handles: for (i = 0; i < n; i++) -> for i in range(0, n, 1)
+    """
+    m = re.search(r'for\s*\(\s*(.*?);\s*(.*?);\s*(.*?)\s*\)', line)
+    if not m:
+        return None
+    init_raw  = m.group(1).strip()
+    cond_raw  = m.group(2).strip()
+    upd_raw   = m.group(3).strip()
+
+    # Parse init: [type] var = start
+    init_m = re.match(r'^(?:(?:int|long|short|float|double)\s+)?(\w+)\s*=\s*(.+)$', init_raw)
+    if not init_m:
+        return None
+    var   = init_m.group(1)
+    start = init_m.group(2).strip()
+
+    # Parse condition to find end value and direction
+    cond_m = re.match(r'^(\w+)\s*([<>]=?|==|!=)\s*(.+)$', cond_raw)
+    if not cond_m or cond_m.group(1) != var:
+        return None
+    op  = cond_m.group(2)
+    end = cond_m.group(3).strip()
+
+    # Parse update: i++, i--, i+=N, i-=N, i=i+N
+    step = None
+    if re.match(r'^\w+\+\+$', upd_raw) or re.match(r'^\+\+\w+$', upd_raw):
+        step = '1'
+    elif re.match(r'^\w+--$', upd_raw) or re.match(r'^--\w+$', upd_raw):
+        step = '-1'
+    else:
+        upd_m = re.match(r'^\w+\s*\+=\s*(.+)$', upd_raw)
+        if upd_m:
+            step = upd_m.group(1).strip()
+        upd_m2 = re.match(r'^\w+\s*-=\s*(.+)$', upd_raw)
+        if upd_m2:
+            step = '-' + upd_m2.group(1).strip()
+
+    if step is None:
+        return None
+
+    # Adjust end for inclusive/exclusive operators
+    if op == '<':
+        range_end = end
+    elif op == '<=':
+        range_end = '{}+1'.format(end)
+    elif op == '>':
+        range_end = '{}-1'.format(end)
+    elif op == '>=':
+        range_end = end
+    else:
+        range_end = end
+
+    if step == '1':
+        if start == '0':
+            range_str = 'range({})'.format(range_end)
+        else:
+            range_str = 'range({}, {})'.format(start, range_end)
+    else:
+        range_str = 'range({}, {}, {})'.format(start, range_end, step)
+
+    return var, range_str
+
 def convert(c_code):
     c_code = convert_comments(c_code)
     c_code = c_code.replace('{', '\n{\n').replace('}', '\n}\n')
-
     lines = c_code.splitlines()
-
-    out = []
-    indent = 0
-    known_int_vars = set()
-    block_labels = []
+    out, indent, known_int_vars, block_labels = [], 0, set(), []
 
     i = 0
-
     while i < len(lines):
-        line = lines[i].strip()
-        i += 1
-
+        raw_line = lines[i]; i += 1
+        line = raw_line.strip()
         if not line:
             continue
 
+        # #define
         if line.startswith('#define'):
             r = handle_define(line)
-            if r:
-                out.append(r)
+            if r: out.append(r)
             continue
 
-        if line.startswith('#'):
+        # Other preprocessor
+        if line.startswith('#') and not (line.startswith('#') and line[1:].lstrip().startswith('define')):
+            # Could be a converted comment (# text)
+            if not re.match(r'^#\s*(include|ifdef|ifndef|endif|pragma|undef)', line):
+                out.append('    '*indent + line)
             continue
 
         if line == '{':
             if out and out[-1].rstrip().endswith(':'):
                 indent += 1
+                last = out[-1].strip()
+                if last.startswith('def '):      block_labels.append('def ' + last.split('(')[0][4:])
+                elif last.startswith('if '):     block_labels.append('if')
+                elif last.startswith('elif '):   block_labels.append('elif')
+                elif last.startswith('else'):    block_labels.append('else')
+                elif last.startswith('while '): block_labels.append('while')
+                elif last.startswith('for '):   block_labels.append('for')
+                else:                            block_labels.append('block')
+            else:
                 block_labels.append('block')
             continue
 
         if line == '}':
+            label = block_labels.pop() if block_labels else 'block'
             indent = max(0, indent-1)
-            out.append('{}# end block'.format('    '*indent))
+            out.append('{}# end {}'.format('    '*indent, label))
             continue
 
         pad = '    '*indent
 
-        if re.match(r'^if\s*\(', line):
-            cond = re.search(r'if\s*\((.*?)\)', line).group(1)
-            out.append('{}if {}:'.format(pad, convert_condition(cond)))
+        # Preserved comments from convert_comments
+        if line.startswith('#') and not line.startswith('#define'):
+            out.append(pad + line)
+            continue
+
+        if line.startswith("'''"):
+            out.append(pad + line)
+            continue
+
+        # Function definition — strip array params properly
+        func_m = re.match(r'^(int|float|void|double|char|bool)\s+(\w+)\s*\((.*?)\)\s*$', line)
+        if func_m:
+            name = func_m.group(2)
+            raw  = func_m.group(3).strip()
+            if raw in ('', 'void'):
+                params = ''
+            else:
+                params = ', '.join(strip_type(p) for p in raw.split(','))
+            if out: out.append('')
+            out.append('def {}({}):'.format(name, params))
+            indent = 0; block_labels = []
             continue
 
         if re.match(r'^else\s+if\s*\(', line):
             cond = re.search(r'else\s+if\s*\((.*?)\)', line).group(1)
-            out.append('{}elif {}:'.format(pad, convert_condition(cond)))
-            continue
+            out.append('{}elif {}:'.format(pad, convert_condition(cond))); continue
 
-        if re.match(r'^else$', line):
-            out.append('{}else:'.format(pad))
-            continue
+        if re.match(r'^else\s*$', line):
+            out.append('{}else:'.format(pad)); continue
+
+        if re.match(r'^if\s*\(', line):
+            cond = re.search(r'if\s*\((.*?)\)', line).group(1)
+            out.append('{}if {}:'.format(pad, convert_condition(cond))); continue
 
         if re.match(r'^while\s*\(', line):
             cond = re.search(r'while\s*\((.*?)\)', line).group(1)
-            out.append('{}while {}:'.format(pad, convert_condition(cond)))
-            continue
-
-        if re.match(r'^for\s*\(', line):
-            m = re.search(r'for\s*\(\s*(.*?);\s*(.*?);\s*(.*?)\s*\)', line)
-
-            if m:
-                init = strip_type(m.group(1).strip())
-                cond = convert_condition(m.group(2).strip())
-                upd = re.sub(r'(\w+)\+\+', r'\1 += 1', m.group(3).strip())
-
-                out.append('{}{}'.format(pad, init))
-                out.append('{}while {}:'.format(pad, cond))
-                indent += 1
-                out.append('{}# update: {}'.format('    '*indent, upd))
-
-            continue
+            out.append('{}while {}:'.format(pad, convert_condition(cond))); continue
 
         if line == 'do':
-            out.append('{}while True:'.format(pad))
+            out.append('{}while True:'.format(pad)); continue
+
+        # ── FOR LOOP → Python for with range() ──────────────────────────────
+        if re.match(r'^for\s*\(', line):
+            parsed = parse_for(line)
+            if parsed:
+                var, range_str = parsed
+                out.append('{}for {} in {}:'.format(pad, var, range_str))
+                # Consume the opening brace if next non-empty line is '{'
+                j = i
+                while j < len(lines) and lines[j].strip() == '': j += 1
+                if j < len(lines) and lines[j].strip() == '{':
+                    i = j + 1
+                    indent += 1
+                    block_labels.append('for')
+            else:
+                # Fallback: keep as while
+                m = re.search(r'for\s*\(\s*(.*?);\s*(.*?);\s*(.*?)\s*\)', line)
+                if m:
+                    init = strip_type(m.group(1).strip())
+                    cond = convert_condition(m.group(2).strip())
+                    upd  = re.sub(r'(\w+)\+\+', r'\1 += 1', m.group(3).strip())
+                    upd  = re.sub(r'(\w+)--',   r'\1 -= 1', upd)
+                    if init: out.append('{}{}'.format(pad, init))
+                    out.append('{}while {}:'.format(pad, cond))
+                    j = i
+                    while j < len(lines) and lines[j].strip() == '': j += 1
+                    if j < len(lines) and lines[j].strip() == '{':
+                        i = j+1; indent += 1; block_labels.append('for')
+                        out.append('{}# update: {}'.format('    '*indent, upd))
             continue
 
         if re.match(r'^return\b', line):
             expr = line[6:].rstrip(';').strip()
-            out.append('{}return {}'.format(pad, expr))
-            continue
+            out.append('{}return{}'.format(pad, ' '+expr if expr else '')); continue
 
         if line.rstrip(';') == 'break':
-            out.append('{}break'.format(pad))
-            continue
-
+            out.append('{}break'.format(pad)); continue
         if line.rstrip(';') == 'continue':
-            out.append('{}continue'.format(pad))
-            continue
+            out.append('{}continue'.format(pad)); continue
 
         if re.match(r'printf\s*\(', line):
-            out.append(pad + convert_printf(line))
-            continue
+            out.append(pad + convert_printf(line)); continue
 
         if re.match(r'scanf\s*\(', line):
             for cl in convert_scanf(line).split('\n'):
                 out.append(pad + cl)
             continue
 
-        func_m = re.match(r'^(int|float|void|double|char|bool)\s+(\w+)\s*\((.*?)\)\s*$', line)
-
-        if func_m:
-            name = func_m.group(2)
-            raw = func_m.group(3).strip()
-
-            params = '' if raw in ('','void') else ', '.join(strip_type(p) for p in raw.split(','))
-
-            out.append('')
-            out.append('def {}({}):'.format(name, params))
+        # ── 2D array declaration: int a[N][N] ───────────────────────────────
+        arr2d_m = re.match(r'^(int|float|double|char)\s+(\w+)\[(\w+)\]\[(\w+)\]\s*;$', line)
+        if arr2d_m:
+            vtype, vname, dim1, dim2 = arr2d_m.group(1), arr2d_m.group(2), arr2d_m.group(3), arr2d_m.group(4)
+            default = DEFAULTS.get(vtype, '0')
+            if vtype in INT_TYPES: known_int_vars.add(vname)
+            out.append('{}{} = [[{} for _ in range({})] for _ in range({})]'.format(pad, vname, default, dim2, dim1))
             continue
 
-        single_m = re.match(r'^(int|float|double|char|bool|long|short)\s+(\w+)\s*(?:=\s*(.+?))?;$', line)
+        # ── 1D array declaration: int arr[N] ────────────────────────────────
+        arr1d_m = re.match(r'^(int|float|double|char)\s+(\w+)\[(\w+)\]\s*;$', line)
+        if arr1d_m:
+            vtype, vname, dim = arr1d_m.group(1), arr1d_m.group(2), arr1d_m.group(3)
+            default = DEFAULTS.get(vtype, '0')
+            if vtype in INT_TYPES: known_int_vars.add(vname)
+            out.append('{}{} = [{} for _ in range({})]'.format(pad, vname, default, dim))
+            continue
 
+        # ── Multiple 2D arrays on one line: int a[N][N], b[N][N], result[N][N] ──
+        multi_arr2d = re.match(r'^(int|float|double)\s+((?:\w+\[\w+\]\[\w+\]\s*,?\s*)+);$', line)
+        if multi_arr2d:
+            vtype   = multi_arr2d.group(1)
+            default = DEFAULTS.get(vtype, '0')
+            rest    = multi_arr2d.group(2)
+            for decl in re.findall(r'(\w+)\[(\w+)\]\[(\w+)\]', rest):
+                vname, d1, d2 = decl
+                if vtype in INT_TYPES: known_int_vars.add(vname)
+                out.append('{}{} = [[{} for _ in range({})] for _ in range({})]'.format(pad, vname, default, d2, d1))
+            continue
+
+        # ── Single variable declaration ──────────────────────────────────────
+        single_m = re.match(r'^(int|float|double|char|bool|long|short)\s+(\w+)\s*(?:=\s*(.+?))?;$', line)
         if single_m:
             vtype, vname = single_m.group(1), single_m.group(2)
             val = single_m.group(3)
-
-            if vtype in INT_TYPES:
-                known_int_vars.add(vname)
-
-            val = DEFAULTS.get(vtype,'0') if val is None else val.strip()
-
+            if vtype in INT_TYPES: known_int_vars.add(vname)
+            val = DEFAULTS.get(vtype,'0') if val is None \
+                else val.strip().replace('true','True').replace('false','False')
             out.append('{}{} = {}'.format(pad, vname, val))
             continue
 
+        # ── Multi-variable declaration: int i, j, k ─────────────────────────
+        multi_m = re.match(r'^(int|float|double|char|bool)\s+([\w\s,=.]+);$', line)
+        if multi_m:
+            vtype   = multi_m.group(1)
+            default = DEFAULTS.get(vtype, '0')
+            for v in multi_m.group(2).split(','):
+                v = v.strip()
+                if not v: continue
+                varname = v.split('=')[0].strip()
+                if vtype in INT_TYPES: known_int_vars.add(varname)
+                if '=' in v:
+                    n_, v_ = v.split('=', 1)
+                    out.append('{}{} = {}'.format(pad, n_.strip(), v_.strip()))
+                else:
+                    out.append('{}{} = {}'.format(pad, varname, default))
+            continue
+
+        # ── General expression ───────────────────────────────────────────────
         expr = line.rstrip(';')
-
         if re.match(r'^\w+\+\+$', expr):
-            out.append('{}{} += 1'.format(pad, expr[:-2]))
-            continue
-
+            out.append('{}{} += 1'.format(pad, expr[:-2])); continue
         if re.match(r'^\w+--$', expr):
-            out.append('{}{} -= 1'.format(pad, expr[:-2]))
-            continue
+            out.append('{}{} -= 1'.format(pad, expr[:-2])); continue
+        if expr:
+            expr = expr.replace('true','True').replace('false','False')
+            expr = smart_divide(expr, known_int_vars)
+            out.append('{}{}'.format(pad, convert_condition(expr)))
 
-        expr = smart_divide(expr, known_int_vars)
-        out.append('{}{}'.format(pad, convert_condition(expr)))
-
+    out.append('\n\nmain()')
     return '\n'.join(out)
 
 # ─────────────────────────────────────────────────────────────
